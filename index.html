@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ことば辞典</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="authScreen" class="auth-screen">
+    <div class="auth-card">
+      <p class="eyebrow">MY PERSONAL DICTIONARY</p>
+      <h1>ことば辞典</h1>
+      <p class="auth-lead">アカウントでログインして、<br>自分だけの言葉を安全に管理します。</p>
+
+      <div class="auth-tabs">
+        <button id="loginTab" class="auth-tab active">ログイン</button>
+        <button id="signupTab" class="auth-tab">新規登録</button>
+      </div>
+
+      <form id="authForm">
+        <label>メールアドレス
+          <input id="authEmail" type="email" autocomplete="email" required placeholder="example@email.com">
+        </label>
+        <label>パスワード
+          <input id="authPassword" type="password" autocomplete="current-password" required minlength="6" placeholder="6文字以上">
+        </label>
+        <button id="authSubmit" type="submit" class="button primary wide">ログイン</button>
+      </form>
+
+      <button id="resetPasswordButton" class="text-button auth-reset">パスワードを忘れた場合</button>
+      <p id="authMessage" class="auth-message"></p>
+      <p class="auth-note">※アカウントごとに辞典データを分離します。</p>
+    </div>
+  </div>
+
+  <div id="appScreen" class="hidden">
+    <header class="header">
+      <div>
+        <p class="eyebrow">MY PERSONAL DICTIONARY</p>
+        <h1>ことば辞典</h1>
+      </div>
+      <div class="account-area">
+        <span id="accountEmail" class="account-email"></span>
+        <button id="logoutButton" class="button">ログアウト</button>
+        <button id="newEntryButton" class="button primary">＋ 言葉を追加</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <div id="migrationPanel" class="migration-panel hidden">
+        <div>
+          <p class="eyebrow">OLD LOCAL DATA</p>
+          <strong>この端末に以前の辞典データがあります。</strong>
+          <p id="migrationCount"></p>
+        </div>
+        <button id="migrationButton" class="button primary">アカウントへ移行</button>
+      </div>
+
+      <section class="hero">
+        <div>
+          <p class="eyebrow">MY WORDS / MY MEANINGS</p>
+          <h2>思いついた言葉を、<br>自分だけの辞典に。</h2>
+          <p>ログインしたアカウントごとに、辞典データを分けて保存します。</p>
+        </div>
+        <div class="stats">
+          <div><strong id="totalCount">0</strong><span>登録語</span></div>
+          <div><strong id="favoriteCount">0</strong><span>お気に入り</span></div>
+          <div><strong id="categoryCount">0</strong><span>カテゴリー</span></div>
+        </div>
+      </section>
+
+      <section id="todaySection" class="today-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">WORD OF TODAY</p>
+            <h2>今日のことば</h2>
+          </div>
+          <button id="randomButton" class="button">↻ 別の言葉を見る</button>
+        </div>
+        <div id="todayWord" class="today-word"></div>
+      </section>
+
+      <section class="review-panel">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">QUICK REVIEW</p>
+            <h2>今日の復習</h2>
+          </div>
+          <div class="review-summary"><span id="reviewProgress" class="network-summary"></span><span id="reviewHistorySummary" class="network-summary"></span></div>
+        </div>
+        <p class="review-lead">登録した言葉をランダムに1つずつ思い出します。答えを見るまで意味は隠れています。</p>
+        <div id="reviewCard" class="review-card"></div>
+        <div class="review-actions">
+          <button id="reviewRevealButton" class="button primary">答えを見る</button>
+          <button id="reviewRecordButton" class="button">復習したと記録</button>
+          <button id="reviewNextButton" class="button">次の言葉</button>
+        </div>
+      </section>
+
+      <section class="review-history-panel">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">REVIEW HISTORY</p>
+            <h2>復習の記録</h2>
+          </div>
+          <span id="reviewHistoryCount" class="network-summary"></span>
+        </div>
+        <div id="reviewHistoryList" class="mini-list"></div>
+      </section>
+
+      <section class="dashboard-grid">
+        <section class="dashboard-card">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">RECENTLY ADDED</p>
+              <h2>最近追加した言葉</h2>
+            </div>
+            <button id="showRecentButton" class="text-button">一覧を見る →</button>
+          </div>
+          <div id="recentEntries" class="mini-list"></div>
+        </section>
+
+        <section class="dashboard-card">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">RECENTLY EDITED</p>
+              <h2>最近編集した言葉</h2>
+            </div>
+            <button id="showEditedButton" class="text-button">一覧を見る →</button>
+          </div>
+          <div id="editedEntries" class="mini-list"></div>
+        </section>
+      </section>
+
+      <section class="data-panel">
+        <div>
+          <p class="eyebrow">DATA</p>
+          <h2>自分の辞典データ</h2>
+          <p>バックアップも現在ログインしているアカウントのデータだけが対象です。</p>
+        </div>
+        <div class="data-actions">
+          <button id="exportButton" class="button">↓ バックアップを書き出す</button>
+          <label class="button file-button">
+            ↑ バックアップを復元
+            <input id="importInput" type="file" accept=".json,application/json">
+          </label>
+        </div>
+        <p id="dataStatus" class="data-status"></p>
+      </section>
+
+      <section class="toolbar">
+        <div class="search-box"><input id="searchInput" list="searchSuggestions" type="search" placeholder="言葉・意味・タグ・関連語を検索"><datalist id="searchSuggestions"></datalist></div>
+        <select id="categoryFilter"><option value="">すべてのカテゴリー</option></select>
+        <select id="favoriteFilter">
+          <option value="">すべて</option>
+          <option value="favorite">お気に入りのみ</option>
+        </select>
+        <select id="discoveryFilter">
+          <option value="">すべての言葉</option>
+          <option value="related">関連語がある</option>
+          <option value="unorganized">未整理</option>
+        </select>
+        <select id="sortSelect">
+          <option value="updated">更新が新しい順</option>
+          <option value="created">登録が新しい順</option>
+          <option value="word">言葉順</option>
+        </select>
+      </section>
+
+      <section class="category-manager">
+        <div>
+          <p class="eyebrow">CATEGORY</p>
+          <h2>カテゴリー</h2>
+        </div>
+        <div id="categoryChips" class="category-chips"></div>
+      </section>
+
+      <section class="network-panel">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">WORD NETWORK</p>
+            <h2>言葉のつながり</h2>
+          </div>
+          <span id="networkSummary" class="network-summary"></span>
+        </div>
+        <p class="network-lead">関連する言葉を登録すると、言葉同士のつながりをここからたどれます。</p>
+        <div id="networkLinks" class="network-links"></div>
+      </section>
+
+      <section class="result-bar"><span id="resultSummary"></span><button id="clearFiltersButton" class="text-button">条件をクリア</button></section>
+      <section id="dictionaryList" class="dictionary-list"></section>
+      <p id="emptyMessage" class="empty">まだ言葉が登録されていません。</p>
+    </main>
+  </div>
+
+  <dialog id="entryDialog">
+    <form id="entryForm" method="dialog" class="entry-form">
+      <div class="form-head">
+        <div>
+          <p class="eyebrow">DICTIONARY ENTRY</p>
+          <h2 id="dialogTitle">言葉を追加</h2>
+        </div>
+        <button type="button" id="closeDialog" class="icon-button">×</button>
+      </div>
+
+      <input type="hidden" id="entryId">
+
+      <label>言葉 <span>必須</span>
+        <input id="word" required maxlength="100" placeholder="例：余白">
+      </label>
+      <label>読み方
+        <input id="reading" maxlength="100" placeholder="例：よはく">
+      </label>
+      <label>意味・自分なりの解釈
+        <textarea id="meaning" rows="4" placeholder="自分にとっての意味を書いてください"></textarea>
+      </label>
+      <label>例文
+        <textarea id="example" rows="3" placeholder="例文や使い方"></textarea>
+      </label>
+      <div class="two-columns">
+        <label>カテゴリー
+          <input id="category" list="categoryOptions" maxlength="50" placeholder="例：デザイン">
+          <datalist id="categoryOptions"></datalist>
+        </label>
+        <label>タグ
+          <input id="tags" maxlength="200" placeholder="例：生活, 考え方">
+        </label>
+      </div>
+      <label>関連する言葉
+        <input id="relatedWords" maxlength="300" placeholder="例：余裕, 空間, 間">
+      </label>
+      <label>メモ
+        <textarea id="memo" rows="3" placeholder="あとから追記したいこと"></textarea>
+      </label>
+      <label class="favorite-check">
+        <input type="checkbox" id="favorite">
+        <span>★ お気に入りに登録</span>
+      </label>
+
+      <div class="form-actions">
+        <button type="button" id="cancelButton" class="button">キャンセル</button>
+        <button type="submit" class="button primary">保存する</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="detailDialog" class="detail-dialog">
+    <div class="detail-view">
+      <div class="form-head">
+        <div>
+          <p class="eyebrow">WORD DETAIL</p>
+          <h2 id="detailTitle">言葉の詳細</h2>
+        </div>
+        <button type="button" id="closeDetailDialog" class="icon-button">×</button>
+      </div>
+      <div id="detailBody"></div>
+    </div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
