@@ -64,11 +64,27 @@ const SUPABASE_PUBLISHABLE_KEY = "ここにSupabaseのPublishable key";
 - supabase_schema.sql
 - README.md
 
-## 6. URL設定
+## 6. URL設定（メール確認エラー対策）
 
-SupabaseのAuthentication設定で、GitHub Pagesの公開URLをSite URL / Redirect URLとして設定してください。
+SupabaseのAuthentication → URL Configurationで設定します。
 
-パスワード再設定メールもこのURLへ戻るようにします。
+### Site URL
+
+GitHub Pagesで公開したURLを設定します。
+
+例：
+
+```text
+https://ユーザー名.github.io/kotoba-jiten/
+```
+
+### Redirect URLs
+
+同じURLをRedirect URLにも追加してください。
+
+このアプリは新規登録時に、現在開いているページを `redirectTo` として指定します。そのため、GitHub Pagesのサブフォルダで公開しても、確認メールのクリック後に正しいアプリへ戻れるようになっています。Supabaseでは、`redirectTo` に指定するURLをRedirect URLsの許可リストへ登録する必要があります。
+
+確認メールをクリックしたときに `otp_expired` などが返った場合も、アプリ側でエラーを読み取り、分かりやすい日本語メッセージを表示します。
 
 ## 7. 旧バージョンからの移行
 
