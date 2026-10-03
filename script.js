@@ -6,15 +6,10 @@ let currentUser = null;
 let entries = [];
 let authMode = "login";
 let todayWordId = null;
-let reviewEntryId = null;
-let reviewRevealed = false;
-let reviewLogs = [];
 
 const $ = id => document.getElementById(id);
 const dialog = $("entryDialog");
 const form = $("entryForm");
-const detailDialog = $("detailDialog");
-const searchSuggestions = $("searchSuggestions");
 
 function configured() {
   return SUPABASE_URL.startsWith("http") &&
@@ -75,7 +70,6 @@ async function startApp(user) {
   $("authScreen").classList.add("hidden");
   $("appScreen").classList.remove("hidden");
   await loadEntries();
-  await loadReviewLogs();
   checkLegacyData();
 }
 
@@ -99,89 +93,6 @@ async function loadEntries() {
 
   entries = data.map(fromDb);
   render();
-}
-
-async function loadReviewLogs() {
-  const { data, error } = await client
-    .from("dictionary_review_logs")
-    .select("id, entry_id, reviewed_at")
-    .eq("user_id", currentUser.id)
-    .order("reviewed_at", { ascending: false })
-    .limit(100);
-
-  if (error) {
-    // v1.1のSQLをまだ実行していない場合でも、辞典本体は使えるようにします。
-    reviewLogs = [];
-    console.warn("復習記録を読み込めませんでした。v1.1のSQLを確認してください。", error);
-    renderReviewHistory();
-    return;
-  }
-
-  reviewLogs = data || [];
-  renderReviewHistory();
-}
-
-function formatReviewDate(value) {
-  return formatDate(value, true);
-}
-
-function getReviewCountForEntry(entryId) {
-  return reviewLogs.filter(log => log.entry_id === entryId).length;
-}
-
-function renderReviewHistory() {
-  const list = $("reviewHistoryList");
-  const count = $("reviewHistoryCount");
-  const summary = $("reviewHistorySummary");
-  if (!list || !count || !summary) return;
-
-  const today = new Date().toDateString();
-  const todayLogs = reviewLogs.filter(log => new Date(log.reviewed_at).toDateString() === today);
-  count.textContent = `累計 ${reviewLogs.length}回`;
-  summary.textContent = `今日 ${todayLogs.length}回`;
-
-  const recent = reviewLogs.slice(0, 8);
-  if (!recent.length) {
-    list.innerHTML = '<div class="review-history-empty">まだ復習記録がありません。<br>「復習したと記録」を押すと、ここに残ります。</div>';
-    return;
-  }
-
-  list.innerHTML = recent.map(log => {
-    const entry = entries.find(e => e.id === log.entry_id);
-    if (!entry) return "";
-    const times = getReviewCountForEntry(entry.id);
-    return `<div class="mini-item" onclick="focusEntry('${entry.id}')">
-      <div><span class="mini-word">${escapeHtml(entry.word)}</span><span class="review-history-badge">${times}回</span></div>
-      <div class="mini-date">${formatReviewDate(log.reviewed_at)}</div>
-    </div>`;
-  }).join("") || '<div class="review-history-empty">表示できる復習記録がありません。</div>';
-}
-
-async function recordReview() {
-  const entry = entries.find(e => e.id === reviewEntryId);
-  if (!entry || !currentUser) return;
-  if (!reviewRevealed) {
-    showStatus("先に「答えを見る」を押してください。", true);
-    return;
-  }
-
-  const row = {
-    id: crypto.randomUUID(),
-    user_id: currentUser.id,
-    entry_id: entry.id
-  };
-  const { error } = await client.from("dictionary_review_logs").insert(row);
-  if (error) {
-    showStatus("復習記録を保存できませんでした。v1.1のSQLを確認してください。", true);
-    console.error(error);
-    return;
-  }
-
-  reviewLogs.unshift({ ...row, reviewed_at: new Date().toISOString() });
-  renderReviewHistory();
-  $("reviewRecordButton").disabled = true;
-  $("reviewRecordButton").textContent = "記録しました ✓";
-  showStatus(`「${entry.word}」を復習した記録を保存しました。`);
 }
 
 function fromDb(row) {
@@ -260,95 +171,6 @@ function getCategories() {
   return [...new Set(entries.map(e => e.category).filter(Boolean))].sort((a,b) => a.localeCompare(b,"ja"));
 }
 
-function parseRelatedWords(value) {
-  return String(value || "")
-    .split(/[,、，\n]+/)
-    .map(word => word.trim())
-    .filter(Boolean);
-}
-
-function normalizeWord(value) {
-  return String(value || "").trim().toLocaleLowerCase();
-}
-
-function findEntryByWord(word) {
-  const target = normalizeWord(word);
-  return entries.find(entry => normalizeWord(entry.word) === target) || null;
-}
-
-function getRelatedEntryIds(entry) {
-  const ids = new Set();
-  parseRelatedWords(entry.relatedWords).forEach(word => {
-    const match = findEntryByWord(word);
-    if (match && match.id !== entry.id) ids.add(match.id);
-  });
-  return [...ids];
-}
-
-function getIncomingRelatedEntries(entry) {
-  const target = normalizeWord(entry.word);
-  return entries.filter(other =>
-    other.id !== entry.id &&
-    parseRelatedWords(other.relatedWords).some(word => normalizeWord(word) === target)
-  );
-}
-
-function renderNetworkPanel() {
-  const summary = $("networkSummary");
-  const container = $("networkLinks");
-  if (!summary || !container) return;
-
-  const links = [];
-  const seen = new Set();
-  entries.forEach(entry => {
-    parseRelatedWords(entry.relatedWords).forEach(word => {
-      const target = findEntryByWord(word);
-      if (!target || target.id === entry.id) return;
-      const key = [entry.id, target.id].sort().join("::");
-      if (seen.has(key)) return;
-      seen.add(key);
-      links.push([entry, target]);
-    });
-  });
-
-  summary.textContent = `${links.length}つのつながり / ${entries.length}語`;
-  if (!links.length) {
-    container.innerHTML = '<div class="network-empty">関連語を登録すると、登録済みの言葉同士がここに表示されます。</div>';
-    return;
-  }
-
-  container.innerHTML = links.slice(0, 12).map(([from, to]) => `
-    <div class="network-link-row">
-      <button class="network-word" onclick="focusEntry('${from.id}')">${escapeHtml(from.word)}</button>
-      <span class="network-arrow">↔</span>
-      <button class="network-word" onclick="focusEntry('${to.id}')">${escapeHtml(to.word)}</button>
-    </div>
-  `).join("");
-}
-
-function renderSearchSuggestions() {
-  const values = new Set();
-  entries.forEach(entry => {
-    [entry.word, entry.reading, entry.category, ...String(entry.tags || "").split(",")].forEach(value => {
-      const text = String(value || "").trim();
-      if (text) values.add(text);
-    });
-  });
-  searchSuggestions.innerHTML = [...values].sort((a,b)=>a.localeCompare(b,"ja")).map(value => `<option value="${escapeHtml(value)}"></option>`).join("");
-}
-
-function getDiscoveryMatches(entry) {
-  const targetTags = new Set(String(entry.tags || "").split(",").map(v=>v.trim().toLocaleLowerCase()).filter(Boolean));
-  return entries.filter(other => {
-    if (other.id === entry.id) return false;
-    const sameCategory = entry.category && other.category && entry.category === other.category;
-    const otherTags = String(other.tags || "").split(",").map(v=>v.trim().toLocaleLowerCase()).filter(Boolean);
-    const sharedTag = otherTags.some(tag => targetTags.has(tag));
-    const related = parseRelatedWords(entry.relatedWords).some(word => normalizeWord(word) === normalizeWord(other.word)) || parseRelatedWords(other.relatedWords).some(word => normalizeWord(word) === normalizeWord(entry.word));
-    return sameCategory || sharedTag || related;
-  });
-}
-
 function renderCategoryFilter() {
   const categories = getCategories();
   const current = $("categoryFilter").value;
@@ -377,55 +199,6 @@ function miniEntryHtml(entry, dateKey) {
   </div>`;
 }
 
-function getReviewCandidates() {
-  return entries.filter(entry => entry.word);
-}
-
-function renderReview(preferredId = null) {
-  const candidates = getReviewCandidates();
-  const card = $("reviewCard");
-  const progress = $("reviewProgress");
-  if (!candidates.length) {
-    reviewEntryId = null;
-    reviewRevealed = false;
-    progress.textContent = "0件";
-    card.innerHTML = '<div class="review-empty">言葉を登録すると、ここで復習できます。</div>';
-    $("reviewRevealButton").disabled = true;
-    $("reviewRecordButton").disabled = true;
-    $("reviewRecordButton").textContent = "復習したと記録";
-    $("reviewNextButton").disabled = true;
-    return;
-  }
-  let entry = preferredId ? candidates.find(e => e.id === preferredId) : null;
-  if (!entry) entry = candidates[Math.floor(Math.random() * candidates.length)];
-  reviewEntryId = entry.id;
-  reviewRevealed = false;
-  progress.textContent = `全${candidates.length}件から出題`;
-  card.innerHTML = `
-    <div class="review-label">思い出してみましょう</div>
-    <div class="review-word">${escapeHtml(entry.word)}</div>
-    ${entry.reading ? `<div class="review-reading">読み：${escapeHtml(entry.reading)}</div>` : ""}
-    <div class="review-answer ${reviewRevealed ? "is-visible" : ""}">${reviewRevealed ? `<span class="review-answer-label">意味</span><div>${escapeHtml(entry.meaning || "まだ意味が登録されていません。")}</div>` : "答えを見るまで非表示"}</div>
-  `;
-  $("reviewRevealButton").disabled = false;
-  $("reviewRecordButton").disabled = true;
-  $("reviewRecordButton").textContent = "復習したと記録";
-  $("reviewNextButton").disabled = false;
-}
-
-function revealReview() {
-  const entry = entries.find(e => e.id === reviewEntryId);
-  if (!entry) return;
-  reviewRevealed = true;
-  const answer = $("reviewCard").querySelector(".review-answer");
-  if (answer) {
-    answer.classList.add("is-visible");
-    answer.innerHTML = `<span class="review-answer-label">意味</span><div>${escapeHtml(entry.meaning || "まだ意味が登録されていません。")}</div>`;
-  }
-  $("reviewRevealButton").disabled = true;
-  $("reviewRecordButton").disabled = false;
-}
-
 function renderDashboard() {
   const recent = [...entries].sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt)).slice(0,5);
   const edited = [...entries].sort((a,b) => new Date(b.updatedAt)-new Date(a.updatedAt)).slice(0,5);
@@ -433,8 +206,6 @@ function renderDashboard() {
   $("recentEntries").innerHTML = recent.length ? recent.map(e => miniEntryHtml(e,"createdAt")).join("") : '<div class="mini-empty">まだ言葉がありません。</div>';
   $("editedEntries").innerHTML = edited.length ? edited.map(e => miniEntryHtml(e,"updatedAt")).join("") : '<div class="mini-empty">まだ編集された言葉がありません。</div>';
   renderTodayWord();
-  renderReview();
-  renderReviewHistory();
 }
 
 function renderTodayWord(preferredId = null) {
@@ -458,22 +229,17 @@ function renderTodayWord(preferredId = null) {
 
 function render() {
   renderCategoryFilter();
-  renderSearchSuggestions();
   renderStats();
   renderDashboard();
-  renderNetworkPanel();
 
   const query = $("searchInput").value.trim().toLowerCase();
   const category = $("categoryFilter").value;
   const favoriteOnly = $("favoriteFilter").value === "favorite";
-  const discovery = $("discoveryFilter").value;
   const sort = $("sortSelect").value;
 
   let filtered = entries.filter(entry => {
     const text = [entry.word,entry.reading,entry.meaning,entry.example,entry.category,entry.tags,entry.relatedWords,entry.memo].join(" ").toLowerCase();
-    const hasRelated = parseRelatedWords(entry.relatedWords).length > 0 || getIncomingRelatedEntries(entry).length > 0;
-    const isUnorganized = !entry.category || !entry.meaning || !entry.tags;
-    return (!query || text.includes(query)) && (!category || entry.category === category) && (!favoriteOnly || entry.favorite) && (!discovery || (discovery === "related" ? hasRelated : isUnorganized));
+    return (!query || text.includes(query)) && (!category || entry.category === category) && (!favoriteOnly || entry.favorite);
   });
 
   filtered.sort((a,b) => {
@@ -483,15 +249,12 @@ function render() {
   });
 
   $("dictionaryList").innerHTML = filtered.map(entry => {
-    const related = parseRelatedWords(entry.relatedWords);
-    const incoming = getIncomingRelatedEntries(entry);
-    const relatedIds = getRelatedEntryIds(entry);
+    const related = (entry.relatedWords || "").split(",").map(x => x.trim()).filter(Boolean);
     return `<article class="entry-card">
       <div class="entry-top">
         <div><div class="word-row"><h3 class="word">${escapeHtml(entry.word)}</h3>${entry.favorite ? '<span class="favorite-star">★</span>' : ""}</div>
         ${entry.reading ? `<div class="reading">読み：${escapeHtml(entry.reading)}</div>` : ""}</div>
         <div class="entry-actions">
-          <button class="small-button" onclick="openDetail('${entry.id}')">詳細を見る</button>
           <button class="small-button" onclick="toggleFavorite('${entry.id}')">${entry.favorite ? "★ お気に入り解除" : "☆ お気に入り"}</button>
           <button class="small-button" onclick="editEntry('${entry.id}')">編集</button>
           <button class="small-button delete" onclick="deleteEntry('${entry.id}')">削除</button>
@@ -502,100 +265,21 @@ function render() {
       ${entry.memo ? `<p class="entry-label">メモ</p><div class="entry-content">${escapeHtml(entry.memo)}</div>` : ""}
       ${entry.category ? `<div class="tags"><span class="tag"># ${escapeHtml(entry.category)}</span></div>` : ""}
       ${entry.tags ? `<div class="tags">${entry.tags.split(",").map(t=>t.trim()).filter(Boolean).map(t=>`<span class="tag"># ${escapeHtml(t)}</span>`).join("")}</div>` : ""}
-      ${related.length ? `<p class="entry-label">関連する言葉</p><div class="related">${related.map(word=>{ const exists = Boolean(findEntryByWord(word)); const cls = exists ? "related-link is-registered" : "related-link is-unregistered"; const label = exists ? "登録済み" : "未登録"; return `<button class="${cls}" title="${label}" onclick='searchRelated(${JSON.stringify(word)})'>${escapeHtml(word)}<span class="related-status">${label}</span></button>`; }).join("")}</div>` : ""}
-      ${incoming.length ? `<p class="entry-label">この言葉を関連語にしている言葉</p><div class="related incoming-related">${incoming.map(other => `<button class="related-link incoming-link" onclick="focusEntry('${other.id}')">${escapeHtml(other.word)}<span class="related-status">登録済み</span></button>`).join("")}</div>` : ""}
-      ${relatedIds.length || incoming.length ? `<div class="connection-note">この言葉のつながり：${relatedIds.length + incoming.length}件</div>` : ""}
+      ${related.length ? `<p class="entry-label">関連する言葉</p><div class="related">${related.map(word=>`<button class="related-link" onclick="searchRelated('${escapeHtml(word)}')">${escapeHtml(word)}</button>`).join("")}</div>` : ""}
       <div class="entry-meta"><span>登録：${formatDate(entry.createdAt)}</span><span>最終更新：${formatDate(entry.updatedAt,true)}</span></div>
     </article>`;
   }).join("");
 
-  $("resultSummary").textContent = `${filtered.length}件表示 ／ 全${entries.length}件`;
   $("emptyMessage").style.display = filtered.length ? "none" : "block";
 }
 
 function filterByCategory(category) { $("categoryFilter").value = category; render(); }
-function searchRelated(word) {
-  $("searchInput").value = word;
-  $("categoryFilter").value = "";
-  $("favoriteFilter").value = "";
-  $("discoveryFilter").value = "";
-  render();
-  const exists = Boolean(findEntryByWord(word));
-  showStatus(exists ? `「${word}」を表示しました。` : `「${word}」はまだ辞典に登録されていません。検索結果から追加できます。`);
-  window.scrollTo({top:$('dictionaryList').getBoundingClientRect().top + window.scrollY - 110,behavior:"smooth"});
-}
+function searchRelated(word) { $("searchInput").value = word; $("categoryFilter").value = ""; render(); window.scrollTo({top:0,behavior:"smooth"}); }
 function focusEntry(id) {
   const entry = entries.find(e => e.id === id);
   if (!entry) return;
   $("searchInput").value = entry.word; $("categoryFilter").value = ""; $("favoriteFilter").value = ""; render();
   window.scrollTo({top:$("dictionaryList").getBoundingClientRect().top + window.scrollY - 110,behavior:"smooth"});
-}
-
-function relatedChipHtml(word, currentId = "") {
-  const match = findEntryByWord(word);
-  const cls = match ? "related-link is-registered" : "related-link is-unregistered";
-  const label = match ? "登録済み" : "未登録";
-  const action = match ? `openDetail('${match.id}')` : `searchRelated(${JSON.stringify(word)})`;
-  return `<button class="${cls}" onclick='${action}'><span>${escapeHtml(word)}</span><span class="related-status">${label}</span></button>`;
-}
-
-function openDetail(id) {
-  const entry = entries.find(e => e.id === id);
-  if (!entry) return;
-
-  const outgoing = parseRelatedWords(entry.relatedWords);
-  const incoming = getIncomingRelatedEntries(entry);
-  const registeredOutgoing = outgoing.filter(word => findEntryByWord(word));
-  const unregisteredOutgoing = outgoing.filter(word => !findEntryByWord(word));
-
-  $("detailTitle").textContent = entry.word;
-  $("detailBody").innerHTML = `
-    <div class="detail-word-head">
-      <div>
-        <div class="detail-word">${escapeHtml(entry.word)}${entry.favorite ? ' <span class="favorite-star">★</span>' : ""}</div>
-        ${entry.reading ? `<div class="reading">読み：${escapeHtml(entry.reading)}</div>` : ""}
-      </div>
-      ${entry.category ? `<span class="tag"># ${escapeHtml(entry.category)}</span>` : ""}
-    </div>
-
-    ${entry.meaning ? `<section class="detail-section"><h3>意味・自分なりの解釈</h3><div class="detail-content">${escapeHtml(entry.meaning)}</div></section>` : ""}
-    ${entry.example ? `<section class="detail-section"><h3>例文</h3><div class="detail-content">${escapeHtml(entry.example)}</div></section>` : ""}
-    ${entry.memo ? `<section class="detail-section"><h3>メモ</h3><div class="detail-content">${escapeHtml(entry.memo)}</div></section>` : ""}
-    ${entry.tags ? `<section class="detail-section"><h3>タグ</h3><div class="tags">${entry.tags.split(",").map(t=>t.trim()).filter(Boolean).map(t=>`<span class="tag"># ${escapeHtml(t)}</span>`).join("")}</div></section>` : ""}
-
-    <section class="detail-section connection-section">
-      <div class="detail-section-heading"><h3>この言葉からつながる言葉</h3><span>${outgoing.length}件</span></div>
-      ${outgoing.length ? `<div class="related detail-related">${outgoing.map(word => relatedChipHtml(word, entry.id)).join("")}</div>` : '<p class="detail-empty">関連する言葉はまだ登録されていません。</p>'}
-    </section>
-
-    <section class="detail-section connection-section">
-      <div class="detail-section-heading"><h3>この言葉につながっている言葉</h3><span>${incoming.length}件</span></div>
-      ${incoming.length ? `<div class="related detail-related">${incoming.map(other => `<button class="related-link incoming-link" onclick="openDetail('${other.id}')"><span>${escapeHtml(other.word)}</span><span class="related-status">登録済み</span></button>`).join("")}</div>` : '<p class="detail-empty">この言葉を関連語にしている言葉はありません。</p>'}
-    </section>
-
-    ${(() => { const discovery = getDiscoveryMatches(entry).filter(other => !outgoing.some(w => normalizeWord(w) === normalizeWord(other.word)) && !incoming.some(other2 => other2.id === other.id)); return discovery.length ? `<section class="detail-section"><div class="detail-section-heading"><h3>この言葉から探してみる</h3><span>${discovery.length}件</span></div><p class="discovery-note">同じカテゴリー・共通タグ・関連関係から見つかった言葉です。</p><div class="related detail-related">${discovery.slice(0,12).map(other => `<button class="related-link discovery-link" onclick="openDetail('${other.id}')"><span>${escapeHtml(other.word)}</span><span class="related-status">発見</span></button>`).join("")}</div></section>` : ""; })()}
-
-    ${unregisteredOutgoing.length ? `<section class="detail-section"><div class="unregistered-note"><strong>未登録の関連語</strong><p>${unregisteredOutgoing.map(escapeHtml).join("、")}</p><button class="small-button" onclick="closeDetailAndSearch(${JSON.stringify(unregisteredOutgoing[0])})">「${escapeHtml(unregisteredOutgoing[0])}」を検索</button></div></section>` : ""}
-
-    <div class="detail-meta"><span>登録：${formatDate(entry.createdAt)}</span><span>最終更新：${formatDate(entry.updatedAt,true)}</span></div>
-    <div class="detail-actions"><button class="button" onclick="editEntryFromDetail('${entry.id}')">編集する</button><button class="button primary" onclick="closeDetailAndFocus('${entry.id}')">辞典で表示</button></div>
-  `;
-  detailDialog.showModal();
-}
-
-function editEntryFromDetail(id) {
-  detailDialog.close();
-  editEntry(id);
-}
-
-function closeDetailAndFocus(id) {
-  detailDialog.close();
-  focusEntry(id);
-}
-
-function closeDetailAndSearch(word) {
-  detailDialog.close();
-  searchRelated(word);
 }
 
 function openNewEntry() {
@@ -622,12 +306,6 @@ async function deleteEntry(id) {
   try { await deleteEntryCloud(id); entries=entries.filter(x=>x.id!==id); render(); showStatus("削除しました。"); }
   catch(error) { showStatus("削除できませんでした。",true); console.error(error); }
 }
-
-$("closeDetailDialog").addEventListener("click", () => detailDialog.close());
-
-detailDialog.addEventListener("click", event => {
-  if (event.target === detailDialog) detailDialog.close();
-});
 
 form.addEventListener("submit", async event => {
   event.preventDefault();
@@ -761,13 +439,8 @@ $("closeDialog").addEventListener("click",()=>dialog.close());
 $("cancelButton").addEventListener("click",()=>dialog.close());
 $("searchInput").addEventListener("input",render);
 $("categoryFilter").addEventListener("change",render);
-$("discoveryFilter").addEventListener("change",render);
 $("favoriteFilter").addEventListener("change",render);
 $("sortSelect").addEventListener("change",render);
-$("clearFiltersButton").addEventListener("click",()=>{ $("searchInput").value=""; $("categoryFilter").value=""; $("favoriteFilter").value=""; $("discoveryFilter").value=""; $("sortSelect").value="updated"; render(); });
-$("reviewRevealButton").addEventListener("click", revealReview);
-$("reviewRecordButton").addEventListener("click", recordReview);
-$("reviewNextButton").addEventListener("click", () => renderReview());
 $("randomButton").addEventListener("click",()=>{
   if(entries.length<2){renderTodayWord();return;}
   const candidates=entries.filter(e=>e.id!==todayWordId);

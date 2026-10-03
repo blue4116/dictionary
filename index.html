@@ -81,34 +81,6 @@
         <div id="todayWord" class="today-word"></div>
       </section>
 
-      <section class="review-panel">
-        <div class="section-heading compact">
-          <div>
-            <p class="eyebrow">QUICK REVIEW</p>
-            <h2>今日の復習</h2>
-          </div>
-          <div class="review-summary"><span id="reviewProgress" class="network-summary"></span><span id="reviewHistorySummary" class="network-summary"></span></div>
-        </div>
-        <p class="review-lead">登録した言葉をランダムに1つずつ思い出します。答えを見るまで意味は隠れています。</p>
-        <div id="reviewCard" class="review-card"></div>
-        <div class="review-actions">
-          <button id="reviewRevealButton" class="button primary">答えを見る</button>
-          <button id="reviewRecordButton" class="button">復習したと記録</button>
-          <button id="reviewNextButton" class="button">次の言葉</button>
-        </div>
-      </section>
-
-      <section class="review-history-panel">
-        <div class="section-heading compact">
-          <div>
-            <p class="eyebrow">REVIEW HISTORY</p>
-            <h2>復習の記録</h2>
-          </div>
-          <span id="reviewHistoryCount" class="network-summary"></span>
-        </div>
-        <div id="reviewHistoryList" class="mini-list"></div>
-      </section>
-
       <section class="dashboard-grid">
         <section class="dashboard-card">
           <div class="section-heading compact">
@@ -150,16 +122,11 @@
       </section>
 
       <section class="toolbar">
-        <div class="search-box"><input id="searchInput" list="searchSuggestions" type="search" placeholder="言葉・意味・タグ・関連語を検索"><datalist id="searchSuggestions"></datalist></div>
+        <input id="searchInput" type="search" placeholder="言葉・意味・タグ・関連語を検索">
         <select id="categoryFilter"><option value="">すべてのカテゴリー</option></select>
         <select id="favoriteFilter">
           <option value="">すべて</option>
           <option value="favorite">お気に入りのみ</option>
-        </select>
-        <select id="discoveryFilter">
-          <option value="">すべての言葉</option>
-          <option value="related">関連語がある</option>
-          <option value="unorganized">未整理</option>
         </select>
         <select id="sortSelect">
           <option value="updated">更新が新しい順</option>
@@ -176,19 +143,6 @@
         <div id="categoryChips" class="category-chips"></div>
       </section>
 
-      <section class="network-panel">
-        <div class="section-heading compact">
-          <div>
-            <p class="eyebrow">WORD NETWORK</p>
-            <h2>言葉のつながり</h2>
-          </div>
-          <span id="networkSummary" class="network-summary"></span>
-        </div>
-        <p class="network-lead">関連する言葉を登録すると、言葉同士のつながりをここからたどれます。</p>
-        <div id="networkLinks" class="network-links"></div>
-      </section>
-
-      <section class="result-bar"><span id="resultSummary"></span><button id="clearFiltersButton" class="text-button">条件をクリア</button></section>
       <section id="dictionaryList" class="dictionary-list"></section>
       <p id="emptyMessage" class="empty">まだ言葉が登録されていません。</p>
     </main>
@@ -243,19 +197,6 @@
         <button type="submit" class="button primary">保存する</button>
       </div>
     </form>
-  </dialog>
-
-  <dialog id="detailDialog" class="detail-dialog">
-    <div class="detail-view">
-      <div class="form-head">
-        <div>
-          <p class="eyebrow">WORD DETAIL</p>
-          <h2 id="detailTitle">言葉の詳細</h2>
-        </div>
-        <button type="button" id="closeDetailDialog" class="icon-button">×</button>
-      </div>
-      <div id="detailBody"></div>
-    </div>
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
