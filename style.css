@@ -219,3 +219,63 @@ dialog { width:min(720px,calc(100% - 28px)); padding:0; border:0; border-radius:
   .entry-form .form-head { gap: 8px; }
   .entry-form .top-save-button { padding: 9px 11px; font-size: 0.85rem; }
 }
+
+
+/* v1.0.3: Keep the add/edit-word header visible while scrolling */
+#entryDialog {
+  max-height: 90vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#entryDialog .entry-form .form-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #fff;
+  margin: -28px -28px 20px;
+  padding: 20px 28px 14px;
+  border-bottom: 1px solid var(--line);
+}
+@media (max-width: 700px) {
+  #entryDialog .entry-form .form-head {
+    margin: -20px -20px 18px;
+    padding: 16px 20px 12px;
+  }
+}
+
+
+/* v1.0.4: Keep the add/edit dialog header fixed while the form body scrolls */
+#entryDialog {
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow: hidden;
+}
+#entryDialog .entry-form {
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 28px 28px;
+}
+#entryDialog .entry-form .form-head {
+  position: sticky;
+  top: 0;
+  flex: 0 0 auto;
+  z-index: 10;
+  background: #fff;
+  margin: 0 -28px 20px;
+  padding: 20px 28px 14px;
+  border-bottom: 1px solid var(--line);
+}
+#entryDialog .entry-form > :not(.form-head) {
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  #entryDialog .entry-form { padding: 0 20px 20px; }
+  #entryDialog .entry-form .form-head {
+    margin: 0 -20px 18px;
+    padding: 16px 20px 12px;
+  }
+}
