@@ -393,6 +393,84 @@ function renderTodayWord(preferredId = null) {
   `;
 }
 
+// 類義語辞書：入力語と意味が近い言葉も検索対象にします。
+const SYNONYM_GROUPS = [
+  ["嬉しい", "うれしい", "喜び", "喜ぶ", "幸せ", "幸福", "楽しい", "満足", "感動"],
+  ["悲しい", "かなしい", "悲しみ", "寂しい", "さびしい", "切ない", "落ち込む", "憂鬱"],
+  ["つらい", "辛い", "苦しい", "しんどい", "きつい", "大変", "苦痛"],
+  ["不安", "心配", "気がかり", "怖い", "恐い", "恐怖", "心細い", "緊張"],
+  ["怒り", "怒る", "腹立つ", "イライラ", "むかつく", "憤り"],
+  ["疲れ", "疲労", "疲れる", "だるい", "倦怠感", "消耗"],
+  ["休む", "休憩", "休息", "リラックス", "息抜き", "気分転換"],
+  ["仕事", "作業", "業務", "働く", "職務", "タスク"],
+  ["勉強", "学習", "学ぶ", "練習", "トレーニング", "習得"],
+  ["考える", "思考", "検討", "悩む", "思い巡らす"],
+  ["大切", "重要", "大事", "必要", "欠かせない"],
+  ["美しい", "きれい", "綺麗", "美麗", "素敵", "魅力的"],
+  ["友達", "友人", "仲間", "知人", "親友"],
+  ["話す", "会話", "対話", "相談", "伝える", "コミュニケーション"],
+  ["助ける", "支援", "サポート", "手伝う", "援助", "協力"],
+  ["始める", "開始", "スタート", "着手", "取り掛かる"],
+  ["終わる", "終了", "完了", "終える", "仕上げる"],
+  ["目標", "目的", "ゴール", "到達点", "めあて"],
+  ["問題", "課題", "困りごと", "悩み", "トラブル"],
+  ["改善", "修正", "見直し", "改良", "よくする"],
+  ["速い", "早い", "迅速", "スピード", "素早い"],
+  ["難しい", "困難", "複雑", "大変", "ややこしい"],
+  ["簡単", "容易", "楽", "手軽", "シンプル"],
+  ["好き", "好み", "お気に入り", "気に入る"],
+  ["嫌い", "苦手", "好まない", "不得意"],
+  ["買う", "購入", "入手", "買い物"],
+  ["お金", "金銭", "費用", "料金", "コスト", "支出"],
+  ["家", "自宅", "住まい", "住宅"],
+  ["食べる", "食事", "食べ物", "料理", "飲食"],
+  ["見る", "観察", "眺める", "確認", "閲覧"],
+  ["書く", "記入", "記録", "執筆", "入力"],
+  ["言葉", "単語", "語句", "表現", "用語"],
+  ["アイデア", "発想", "考え", "案", "着想"],
+  ["成長", "上達", "進歩", "向上", "レベルアップ"],
+  ["失敗", "ミス", "間違い", "誤り", "しくじり"],
+  ["成功", "達成", "うまくいく", "実現", "成就"]
+];
+
+function normalizeSearchText(value) {
+  return String(value || "").normalize("NFKC").toLocaleLowerCase("ja").replace(/[\s　・、。,.!！?？:：;；「」『』（）()［］\[\]{}]/g, "");
+}
+function getSynonyms(query) {
+  const q = normalizeSearchText(query);
+  const result = new Set();
+  if (!q) return [];
+  for (const group of SYNONYM_GROUPS) {
+    const normalized = group.map(normalizeSearchText);
+    if (normalized.some(term => term === q || (q.length >= 2 && term.includes(q)))) {
+      group.forEach(term => { const t = normalizeSearchText(term); if (t && t !== q) result.add(t); });
+    }
+  }
+  return [...result];
+}
+function editDistance(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 99;
+  let prev = Array.from({length: b.length + 1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(cur[j-1]+1, prev[j]+1, prev[j-1]+(a[i-1] === b[j-1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function scoreEntry(entry, query) {
+  const fields = [entry.word, entry.reading, entry.meaning, entry.example, entry.category, entry.tags, entry.relatedWords, entry.memo].map(normalizeSearchText).filter(Boolean);
+  if (fields.some(v => v.includes(query))) return 100;
+  const synonyms = getSynonyms(query);
+  if (synonyms.some(term => fields.some(v => v.includes(term)))) return 65;
+  // 単語欄・読み・タグ・関連語では、短い入力ミスも許容します。
+  const candidates = [entry.word, entry.reading, entry.tags, entry.relatedWords].flatMap(v => String(v || "").split(/[\s,，、/|]+/)).map(normalizeSearchText).filter(Boolean);
+  for (const candidate of candidates) {
+    if (query.length >= 2 && candidate.length >= 2 && editDistance(query, candidate) <= (query.length <= 4 ? 1 : 2)) return 45;
+  }
+  return 0;
+}
+
 function render() {
   renderCategoryFilter();
   renderSearchSuggestions();
@@ -400,24 +478,26 @@ function render() {
   renderDashboard();
   renderNetworkPanel();
 
-  const query = $("searchInput").value.trim().toLowerCase();
+  const rawQuery = $("searchInput").value.trim();
+  const query = normalizeSearchText(rawQuery);
   const category = $("categoryFilter").value;
   const favoriteOnly = $("favoriteFilter").value === "favorite";
   const discovery = $("discoveryFilter").value;
   const sort = $("sortSelect").value;
 
-  let filtered = entries.filter(entry => {
-    const text = [entry.word,entry.reading,entry.meaning,entry.example,entry.category,entry.tags,entry.relatedWords,entry.memo].join(" ").toLowerCase();
+  let filtered = entries.map(entry => ({entry, score: query ? scoreEntry(entry, query) : 0})).filter(({entry, score}) => {
     const hasRelated = parseRelatedWords(entry.relatedWords).length > 0 || getIncomingRelatedEntries(entry).length > 0;
     const isUnorganized = !entry.category || !entry.meaning || !entry.tags;
-    return (!query || text.includes(query)) && (!category || entry.category === category) && (!favoriteOnly || entry.favorite) && (!discovery || (discovery === "related" ? hasRelated : isUnorganized));
+    return (!query || score > 0) && (!category || entry.category === category) && (!favoriteOnly || entry.favorite) && (!discovery || (discovery === "related" ? hasRelated : isUnorganized));
   });
 
   filtered.sort((a,b) => {
-    if (sort === "word") return a.word.localeCompare(b.word,"ja");
-    if (sort === "created") return new Date(b.createdAt)-new Date(a.createdAt);
-    return new Date(b.updatedAt)-new Date(a.updatedAt);
+    if (query && b.score !== a.score) return b.score - a.score;
+    if (sort === "word") return a.entry.word.localeCompare(b.entry.word,"ja");
+    if (sort === "created") return new Date(b.entry.createdAt)-new Date(a.entry.createdAt);
+    return new Date(b.entry.updatedAt)-new Date(a.entry.updatedAt);
   });
+  filtered = filtered.map(item => item.entry);
 
   $("dictionaryList").innerHTML = filtered.map(entry => {
     const related = parseRelatedWords(entry.relatedWords);
