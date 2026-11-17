@@ -393,82 +393,73 @@ function renderTodayWord(preferredId = null) {
   `;
 }
 
-// 類義語辞書：入力語と意味が近い言葉も検索対象にします。
-const SYNONYM_GROUPS = [
-  ["嬉しい", "うれしい", "喜び", "喜ぶ", "幸せ", "幸福", "楽しい", "満足", "感動"],
-  ["悲しい", "かなしい", "悲しみ", "寂しい", "さびしい", "切ない", "落ち込む", "憂鬱"],
-  ["つらい", "辛い", "苦しい", "しんどい", "きつい", "大変", "苦痛"],
-  ["不安", "心配", "気がかり", "怖い", "恐い", "恐怖", "心細い", "緊張"],
-  ["怒り", "怒る", "腹立つ", "イライラ", "むかつく", "憤り"],
-  ["疲れ", "疲労", "疲れる", "だるい", "倦怠感", "消耗"],
-  ["休む", "休憩", "休息", "リラックス", "息抜き", "気分転換"],
-  ["仕事", "作業", "業務", "働く", "職務", "タスク"],
-  ["勉強", "学習", "学ぶ", "練習", "トレーニング", "習得"],
-  ["考える", "思考", "検討", "悩む", "思い巡らす"],
-  ["大切", "重要", "大事", "必要", "欠かせない"],
-  ["美しい", "きれい", "綺麗", "美麗", "素敵", "魅力的"],
-  ["友達", "友人", "仲間", "知人", "親友"],
-  ["話す", "会話", "対話", "相談", "伝える", "コミュニケーション"],
-  ["助ける", "支援", "サポート", "手伝う", "援助", "協力"],
-  ["始める", "開始", "スタート", "着手", "取り掛かる"],
-  ["終わる", "終了", "完了", "終える", "仕上げる"],
-  ["目標", "目的", "ゴール", "到達点", "めあて"],
-  ["問題", "課題", "困りごと", "悩み", "トラブル"],
-  ["改善", "修正", "見直し", "改良", "よくする"],
-  ["速い", "早い", "迅速", "スピード", "素早い"],
-  ["難しい", "困難", "複雑", "大変", "ややこしい"],
-  ["簡単", "容易", "楽", "手軽", "シンプル"],
-  ["好き", "好み", "お気に入り", "気に入る"],
-  ["嫌い", "苦手", "好まない", "不得意"],
-  ["買う", "購入", "入手", "買い物"],
-  ["お金", "金銭", "費用", "料金", "コスト", "支出"],
-  ["家", "自宅", "住まい", "住宅"],
-  ["食べる", "食事", "食べ物", "料理", "飲食"],
-  ["見る", "観察", "眺める", "確認", "閲覧"],
-  ["書く", "記入", "記録", "執筆", "入力"],
-  ["言葉", "単語", "語句", "表現", "用語"],
-  ["アイデア", "発想", "考え", "案", "着想"],
-  ["成長", "上達", "進歩", "向上", "レベルアップ"],
-  ["失敗", "ミス", "間違い", "誤り", "しくじり"],
-  ["成功", "達成", "うまくいく", "実現", "成就"]
-];
-
 function normalizeSearchText(value) {
-  return String(value || "").normalize("NFKC").toLocaleLowerCase("ja").replace(/[\s　・、。,.!！?？:：;；「」『』（）()［］\[\]{}]/g, "");
+  return String(value || "").toLocaleLowerCase("ja")
+    .normalize("NFKC")
+    .replace(/[ァ-ン]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60))
+    .replace(/[\s　・、。,.!?！？「」『』（）()［］\[\]{}:：;；_-]/g, "");
 }
-function getSynonyms(query) {
-  const q = normalizeSearchText(query);
-  const result = new Set();
-  if (!q) return [];
-  for (const group of SYNONYM_GROUPS) {
-    const normalized = group.map(normalizeSearchText);
-    if (normalized.some(term => term === q || (q.length >= 2 && term.includes(q)))) {
-      group.forEach(term => { const t = normalizeSearchText(term); if (t && t !== q) result.add(t); });
+
+function editDistance(a, b) {
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+  if (Math.abs(a.length - b.length) > 3) return 4;
+  let previous = Array.from({length: b.length + 1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      rowMin = Math.min(rowMin, current[j]);
+    }
+    if (rowMin > 3) return 4;
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+function fuzzyFieldScore(query, value) {
+  const field = normalizeSearchText(value);
+  if (!field) return 0;
+  if (field === query) return 120;
+  if (field.includes(query)) return 100;
+  if (query.includes(field) && field.length >= 2) return 72;
+  // Japanese has no spaces, so compare short character windows as well as full words.
+  const maxDistance = query.length <= 3 ? 1 : query.length <= 6 ? 2 : 3;
+  let best = 0;
+  const minLen = Math.max(1, query.length - maxDistance);
+  const maxLen = Math.min(field.length, query.length + maxDistance);
+  for (let len = minLen; len <= maxLen; len++) {
+    for (let i = 0; i <= field.length - len; i++) {
+      const distance = editDistance(query, field.slice(i, i + len));
+      if (distance <= maxDistance) best = Math.max(best, 65 - distance * 18 - Math.abs(query.length - len) * 4);
     }
   }
-  return [...result];
+  return best;
 }
-function editDistance(a, b) {
-  if (Math.abs(a.length - b.length) > 2) return 99;
-  let prev = Array.from({length: b.length + 1}, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const cur = [i];
-    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(cur[j-1]+1, prev[j]+1, prev[j-1]+(a[i-1] === b[j-1] ? 0 : 1));
-    prev = cur;
-  }
-  return prev[b.length];
-}
-function scoreEntry(entry, query) {
-  const fields = [entry.word, entry.reading, entry.meaning, entry.example, entry.category, entry.tags, entry.relatedWords, entry.memo].map(normalizeSearchText).filter(Boolean);
-  if (fields.some(v => v.includes(query))) return 100;
-  const synonyms = getSynonyms(query);
-  if (synonyms.some(term => fields.some(v => v.includes(term)))) return 65;
-  // 単語欄・読み・タグ・関連語では、短い入力ミスも許容します。
-  const candidates = [entry.word, entry.reading, entry.tags, entry.relatedWords].flatMap(v => String(v || "").split(/[\s,，、/|]+/)).map(normalizeSearchText).filter(Boolean);
-  for (const candidate of candidates) {
-    if (query.length >= 2 && candidate.length >= 2 && editDistance(query, candidate) <= (query.length <= 4 ? 1 : 2)) return 45;
-  }
-  return 0;
+
+function getSearchScore(entry, rawQuery, includeSimilar) {
+  const query = normalizeSearchText(rawQuery);
+  if (!query) return 1;
+  const directFields = [entry.word, entry.reading, entry.meaning, entry.example, entry.category, entry.tags, entry.relatedWords, entry.memo];
+  const direct = Math.max(...directFields.map(value => fuzzyFieldScore(query, value)));
+  if (direct > 0 || !includeSimilar) return direct;
+
+  // If the query is close to a registered word, also surface words linked to it
+  // through explicit related words, shared tags, or the same category.
+  const anchor = entries
+    .filter(other => other.id !== entry.id)
+    .map(other => ({other, score: Math.max(fuzzyFieldScore(query, other.word), fuzzyFieldScore(query, other.reading), fuzzyFieldScore(query, other.tags), fuzzyFieldScore(query, other.category))}))
+    .filter(item => item.score >= 45)
+    .sort((a,b) => b.score-a.score)[0];
+  if (!anchor) return 0;
+  const source = anchor.other;
+  const sameCategory = Boolean(source.category && entry.category && source.category === entry.category);
+  const sourceTags = new Set(String(source.tags || "").split(",").map(v=>normalizeSearchText(v)).filter(Boolean));
+  const sharedTag = String(entry.tags || "").split(",").some(v => sourceTags.has(normalizeSearchText(v)) && normalizeSearchText(v));
+  const linked = parseRelatedWords(source.relatedWords).some(w => normalizeSearchText(w) === normalizeSearchText(entry.word)) || parseRelatedWords(entry.relatedWords).some(w => normalizeSearchText(w) === normalizeSearchText(source.word));
+  return linked ? 48 + anchor.score * 0.1 : sharedTag ? 35 + anchor.score * 0.1 : sameCategory ? 25 + anchor.score * 0.1 : 0;
 }
 
 function render() {
@@ -478,21 +469,22 @@ function render() {
   renderDashboard();
   renderNetworkPanel();
 
-  const rawQuery = $("searchInput").value.trim();
-  const query = normalizeSearchText(rawQuery);
+  const query = $("searchInput").value.trim().toLowerCase();
   const category = $("categoryFilter").value;
   const favoriteOnly = $("favoriteFilter").value === "favorite";
   const discovery = $("discoveryFilter").value;
   const sort = $("sortSelect").value;
 
-  let filtered = entries.map(entry => ({entry, score: query ? scoreEntry(entry, query) : 0})).filter(({entry, score}) => {
+  const includeSimilar = $("fuzzySearchToggle")?.checked !== false;
+  const scored = entries.map(entry => ({entry, score: getSearchScore(entry, query, includeSimilar)}));
+  let filtered = scored.filter(({entry, score}) => {
     const hasRelated = parseRelatedWords(entry.relatedWords).length > 0 || getIncomingRelatedEntries(entry).length > 0;
     const isUnorganized = !entry.category || !entry.meaning || !entry.tags;
     return (!query || score > 0) && (!category || entry.category === category) && (!favoriteOnly || entry.favorite) && (!discovery || (discovery === "related" ? hasRelated : isUnorganized));
   });
 
   filtered.sort((a,b) => {
-    if (query && b.score !== a.score) return b.score - a.score;
+    if (query && includeSimilar && b.score !== a.score) return b.score-a.score;
     if (sort === "word") return a.entry.word.localeCompare(b.entry.word,"ja");
     if (sort === "created") return new Date(b.entry.createdAt)-new Date(a.entry.createdAt);
     return new Date(b.entry.updatedAt)-new Date(a.entry.updatedAt);
@@ -615,8 +607,58 @@ function closeDetailAndSearch(word) {
   searchRelated(word);
 }
 
+function draftStorageKey() {
+  const owner = currentUser?.id || currentUser?.email || "guest";
+  const entryId = $("entryId").value || "new";
+  return `my-word-dictionary-draft-v1:${owner}:${entryId}`;
+}
+
+function readDraft(key = draftStorageKey()) {
+  try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
+}
+
+function collectFormData() {
+  return {
+    word: $("word").value, reading: $("reading").value, meaning: $("meaning").value,
+    example: $("example").value, category: $("category").value, tags: $("tags").value,
+    relatedWords: $("relatedWords").value, memo: $("memo").value, favorite: $("favorite").checked,
+    savedAt: new Date().toISOString()
+  };
+}
+
+function applyDraft(draft) {
+  if (!draft) return;
+  for (const field of ["word", "reading", "meaning", "example", "category", "tags", "relatedWords", "memo"]) {
+    if (typeof draft[field] === "string") $(field).value = draft[field];
+  }
+  $("favorite").checked = Boolean(draft.favorite);
+}
+
+function saveDraft(showMessage = true) {
+  const data = collectFormData();
+  try {
+    localStorage.setItem(draftStorageKey(), JSON.stringify(data));
+    $("draftStatus").textContent = `途中保存しました（${new Date().toLocaleTimeString("ja-JP", {hour:"2-digit", minute:"2-digit"})}）`;
+    if (showMessage) showStatus("入力内容を途中保存しました。この画面を閉じても、次に開いたときに復元できます。");
+    return true;
+  } catch (error) {
+    $("draftStatus").textContent = "途中保存できませんでした。ブラウザーの保存領域を確認してください。";
+    console.error(error);
+    return false;
+  }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(draftStorageKey()); } catch {}
+  $("draftStatus").textContent = "入力内容はこの端末に自動保存されます。";
+}
+
 function openNewEntry() {
-  form.reset(); $("entryId").value = ""; $("favorite").checked = false; $("dialogTitle").textContent = "言葉を追加"; dialog.showModal(); $("word").focus();
+  form.reset(); $("entryId").value = ""; $("favorite").checked = false; $("dialogTitle").textContent = "言葉を追加";
+  const draft = readDraft();
+  if (draft) { applyDraft(draft); $("draftStatus").textContent = "前回の途中保存を復元しました。"; }
+  else $("draftStatus").textContent = "入力内容はこの端末に自動保存されます。";
+  dialog.showModal(); $("word").focus();
 }
 
 function editEntry(id) {
@@ -624,7 +666,11 @@ function editEntry(id) {
   $("entryId").value=e.id; $("word").value=e.word; $("reading").value=e.reading||""; $("meaning").value=e.meaning||"";
   $("example").value=e.example||""; $("category").value=e.category||""; $("tags").value=e.tags||"";
   $("relatedWords").value=e.relatedWords||""; $("memo").value=e.memo||""; $("favorite").checked=Boolean(e.favorite);
-  $("dialogTitle").textContent="言葉を編集"; dialog.showModal();
+  $("dialogTitle").textContent="言葉を編集";
+  const draft = readDraft();
+  if (draft) { applyDraft(draft); $("draftStatus").textContent = "この言葉の前回の途中保存を復元しました。"; }
+  else $("draftStatus").textContent = "入力内容はこの端末に自動保存されます。";
+  dialog.showModal();
 }
 
 async function toggleFavorite(id) {
@@ -662,7 +708,7 @@ form.addEventListener("submit", async event => {
       await saveNewEntry(created);
       entries.unshift(created);
     }
-    dialog.close(); showStatus("保存しました。"); render();
+    clearDraft(); dialog.close(); showStatus("保存しました。"); render();
   } catch(error) {
     showStatus("保存できませんでした。Supabaseの設定とRLSを確認してください。",true); console.error(error);
   }
@@ -782,9 +828,15 @@ $("logoutButton").addEventListener("click",async()=>{
 });
 
 $("newEntryButton").addEventListener("click",openNewEntry);
+$("saveDraftButton").addEventListener("click", () => saveDraft(true));
+for (const id of ["word", "reading", "meaning", "example", "category", "tags", "relatedWords", "memo", "favorite"]) {
+  $(id).addEventListener("input", () => saveDraft(false));
+  $(id).addEventListener("change", () => saveDraft(false));
+}
 $("closeDialog").addEventListener("click",()=>dialog.close());
 $("cancelButton").addEventListener("click",()=>dialog.close());
 $("searchInput").addEventListener("input",render);
+$("fuzzySearchToggle").addEventListener("change",render);
 $("categoryFilter").addEventListener("change",render);
 $("discoveryFilter").addEventListener("change",render);
 $("favoriteFilter").addEventListener("change",render);
