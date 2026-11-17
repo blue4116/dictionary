@@ -1,23 +1,17 @@
-# 糖尿病改善サポート（Auth0ログイン接続版）
+# 糖尿病改善サポート（Auth0ログイン修正版）
 
-## 今回の変更
-- Auth0のメールアドレスログイン画面へ接続しました。
-- 「ログイン」と「新規登録」はAuth0の画面で行います。
-- Client Secretは使用しません。ブラウザーに置かないでください。
-- この段階ではログイン機能のみです。食事・血糖値・体重などの記録はまだクラウド保存されません。
+## 今回の修正
+- Auth0公式CDN（cdn.auth0.com）のSPA SDKを使用するように変更しました。
+- SDKの初期化後にログイン・新規登録ボタンを有効にします。
+- Auth0のメールアドレス・パスワード入力はAuth0のホスト型ログイン画面で行います。
 
 ## Auth0設定
-Auth0アプリケーションの種類は「Single Page Application（SPA）」にしてください。
+- Domain: dev-sjxnzbhtja8bcx2v.us.auth0.com
+- Client ID: a4uAboQssJaeVLBuf9eOiXNlOznkAD2t
+- Allowed Callback URLs / Allowed Logout URLs: https://blue4116.github.io/tousitu_File/
+- Allowed Web Origins: https://blue4116.github.io
 
-以下のURLをAuth0のアプリケーション設定に登録します（GitHub Pages公開先）。
-- Allowed Callback URLs: `https://blue4116.github.io/tousitu_File/`
-- Allowed Logout URLs: `https://blue4116.github.io/tousitu_File/`
-- Allowed Web Origins: `https://blue4116.github.io`
-
-## 次の工程：安全な個人別データ保存
-Auth0は本人確認を担当し、健康記録は別のデータベースに保存します。保存サーバー側でAuth0のアクセストークンを検証し、Auth0のユーザー識別子（sub）ごとに記録を分離します。これにより、別の利用者の記録を読めない設計にします。
-
-現段階の画面では、記録の保存ボタンを押すと「次の工程で接続」と表示されます。これは未接続の保存先へ誤ってデータを送らないための動作です。
+Client SecretはHTMLやJavaScriptに絶対に記載しないでください。
 
 ## 注意
-このアプリは日々の記録を支援するもので、診断・治療の代わりではありません。食事目標や薬・インスリンの調整は医療従事者に相談してください。
+この版はログイン接続の確認用です。食事・血糖値・体組成のクラウド保存はまだ接続していません。

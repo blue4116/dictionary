@@ -45,7 +45,10 @@ document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () =>
 
 async function initAuth0() {
   try {
-    if (!window.auth0 || !window.auth0.createAuth0Client) throw new Error("Auth0 SDKを読み込めませんでした。");
+    // Auth0公式CDNのSDKが読み込まれるまで確認します。
+    if (!window.auth0 || typeof window.auth0.createAuth0Client !== "function") {
+      throw new Error("Auth0 SDKが読み込まれていません。通信制限やCDNの読み込み状態を確認してください。");
+    }
     auth0Client = await window.auth0.createAuth0Client(auth0Config);
     const params = new URLSearchParams(window.location.search);
     if (params.has("code") && params.has("state")) {
@@ -53,8 +56,10 @@ async function initAuth0() {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
     currentUser = await auth0Client.getUser() || null;
+    auth0Ready = true;
+    $("loginBtn").disabled = false;
+    $("signupBtn").disabled = false;
     if (currentUser) {
-      auth0Ready = true;
       showApp();
       await loadRecords();
       startReminderLoop();
@@ -64,7 +69,9 @@ async function initAuth0() {
   } catch (error) {
     console.error("Auth0初期化エラー", error);
     showApp();
-    setMessage("authMessage", "ログインの準備に失敗しました。Auth0の設定と通信環境を確認してください。", true);
+    $("loginBtn").disabled = false;
+    $("signupBtn").disabled = false;
+    setMessage("authMessage", "Auth0の読み込みに失敗しました。ページを再読み込みしてください。解決しない場合はConsoleの赤いエラーを確認します。", true);
   }
 }
 async function authAction(mode) {
